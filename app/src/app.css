@@ -876,6 +876,23 @@ body {
   font-size: 0.8rem;
 }
 
+.episode-magnet-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.1rem;
+}
+
+.episode-magnet-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.8rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
 .episode-watch-badge {
   display: inline-flex;
   width: fit-content;

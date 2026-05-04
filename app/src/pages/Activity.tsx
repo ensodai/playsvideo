@@ -65,6 +65,35 @@ function formatTimeAgo(ts: number): string {
   return new Date(ts).toLocaleDateString();
 }
 
+function magnetWithFileIndex(entry: MergedRemotePlaybackEntry): string | null {
+  if (!entry.torrentMagnetUrl) return null;
+  if (entry.torrentFileIndex == null) return entry.torrentMagnetUrl;
+  const sep = entry.torrentMagnetUrl.includes('?') ? '&' : '?';
+  return `${entry.torrentMagnetUrl}${sep}so=${entry.torrentFileIndex}`;
+}
+
+function TorrentActivityActions({ entry }: { entry: MergedRemotePlaybackEntry }) {
+  const magnetUrl = magnetWithFileIndex(entry);
+  if (!magnetUrl) return null;
+
+  return (
+    <span className="episode-magnet-actions">
+      <a href={magnetUrl} className="btn btn-secondary episode-magnet-action">
+        Open Magnet Link
+      </a>
+      <button
+        type="button"
+        className="btn btn-secondary episode-magnet-action"
+        onClick={() => {
+          void navigator.clipboard.writeText(magnetUrl);
+        }}
+      >
+        Copy Magnet Link
+      </button>
+    </span>
+  );
+}
+
 interface ShowGroup {
   tmdbId: number;
   title: string;
@@ -181,6 +210,7 @@ function EpisodeRow({ ep }: { ep: EpisodeEntry }) {
             {entry.watchState === 'watched' ? 'Watched' : 'New'}
           </span>
         )}
+        {localEntryId == null && <TorrentActivityActions entry={entry} />}
       </span>
     </>
   );
@@ -236,6 +266,7 @@ function MovieRow({ group }: { group: ShowGroup }) {
           {entry.watchState === 'watched' ? 'Watched' : 'New'}
         </span>
       )}
+      {localEntryId == null && <TorrentActivityActions entry={entry} />}
     </span>
   );
 
