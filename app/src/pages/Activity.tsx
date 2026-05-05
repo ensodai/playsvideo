@@ -110,6 +110,18 @@ interface EpisodeEntry {
   localEntryId?: number;
 }
 
+function buildResumeState(entry: MergedRemotePlaybackEntry) {
+  return {
+    resumePlayback: {
+      playbackKey: entry.playbackKey,
+      positionSec: entry.position,
+      durationSec: entry.durationSec,
+      watchState: entry.watchState,
+      lastPlayedAt: entry.watchedAt,
+    },
+  };
+}
+
 function buildShowGroups(
   merged: Map<string, MergedRemotePlaybackEntry>,
   localEntryBySyncKey: Map<string, number>,
@@ -217,7 +229,7 @@ function EpisodeRow({ ep }: { ep: EpisodeEntry }) {
 
   if (localEntryId != null) {
     return (
-      <Link to={`/play/${localEntryId}`} className="episode-row">
+      <Link to={`/play/${localEntryId}`} state={buildResumeState(entry)} className="episode-row">
         {content}
       </Link>
     );
@@ -272,7 +284,7 @@ function MovieRow({ group }: { group: ShowGroup }) {
 
   if (localEntryId != null) {
     return (
-      <Link to={`/play/${localEntryId}`} className="episode-row">
+      <Link to={`/play/${localEntryId}`} state={buildResumeState(entry)} className="episode-row">
         {content}
       </Link>
     );
