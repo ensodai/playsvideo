@@ -18,6 +18,15 @@ export default defineConfig({
     port: 4200,
     host: '0.0.0.0',
     allowedHosts: ['playsvideo.graehlarts.com', 'local.playsvideo.com'],
+    proxy: {
+      '/app': {
+        target: 'https://localhost:9300',
+        changeOrigin: true,
+        rewrite: (path) => (path === '/app' ? '/app/' : path),
+        secure: false,
+        ws: true,
+      },
+    },
   },
   appType: 'mpa',
   plugins: [

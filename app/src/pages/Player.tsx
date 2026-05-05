@@ -4,12 +4,18 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type CatalogEntry } from '../db';
 import { getDeviceId } from '../device.js';
 import { useEngine } from '../hooks/useEngine';
+import { usePlaybackVideoElement } from '../hooks/usePlaybackVideoElement.js';
 import { folderProvider, type SiblingSubtitleFile } from '../folder-provider.js';
 import { useSetting } from '../hooks/useSetting';
-import { useCustomControls } from '../hooks/useCustomControls';
 import { useFullscreen } from '../hooks/useFullscreen';
+import { useVideoJsControls } from '../hooks/useVideoJsControls.js';
 import { getLocalPlayback } from '../local-playback.js';
-import { AUTOPLAY_NEXT_EPISODE_KEY, PLAYER_CONTROLS_TYPE_KEY } from '../settings.js';
+import {
+  AUTOPLAY_NEXT_EPISODE_KEY,
+  normalizePlayerControlsType,
+  PLAYER_CONTROLS_TYPE_KEY,
+  type PlayerControlsType,
+} from '../settings.js';
 
 const PLAYER_QUERY_PENDING = Symbol('player-query-pending');
 
@@ -92,10 +98,12 @@ export function Player() {
   const [siblingSubtitles, setSiblingSubtitles] = useState<SiblingSubtitleFile[]>([]);
   const [loadingSiblingSubtitles, setLoadingSiblingSubtitles] = useState(false);
   const [siblingSubtitleStatus, setSiblingSubtitleStatus] = useState('');
-  const [controlsType, setControlsType] = useSetting<'stock' | 'custom'>(
+  const [storedControlsType, setControlsType] = useSetting<PlayerControlsType | 'custom'>(
     PLAYER_CONTROLS_TYPE_KEY,
     'stock',
   );
+  const controlsType = normalizePlayerControlsType(storedControlsType);
+  const { setVideoHostElement, videoElement } = usePlaybackVideoElement(controlsType);
   const [autoplayNextEpisode] = useSetting<boolean>(AUTOPLAY_NEXT_EPISODE_KEY, false);
   const routeEntry =
     location.state &&
@@ -124,7 +132,6 @@ export function Player() {
     null,
   );
   const {
-    videoRef,
     status,
     phase,
     hasEnded,
@@ -136,26 +143,26 @@ export function Player() {
     copyDiagnostics,
     diagnosticsStatus,
     savePosition,
-  } =
-    useEngine(
-      resolvedEntry &&
-        resolvedEntry.hasLocalFile !== false
-        ? {
-            kind: 'entry',
-            entry: resolvedEntry,
-            playback: localPlayback ?? null,
-            playbackTarget:
-              resolvedDeviceId && playbackKey
-                ? {
-                    deviceId: resolvedDeviceId,
-                    playbackKey,
-                  }
-                : null,
-          }
-        : null,
-    );
-  useCustomControls(videoRef, containerEl, controlsType === 'custom');
-  useFullscreen(videoRef, containerEl);
+  } = useEngine(
+    resolvedEntry && resolvedEntry.hasLocalFile !== false
+      ? {
+          kind: 'entry',
+          entry: resolvedEntry,
+          playback: localPlayback ?? null,
+          playbackTarget:
+            resolvedDeviceId && playbackKey
+              ? {
+                  deviceId: resolvedDeviceId,
+                  playbackKey,
+                }
+              : null,
+        }
+      : null,
+    controlsType,
+    videoElement,
+  );
+  useVideoJsControls(videoElement, controlsType);
+  useFullscreen(videoElement, containerEl);
 
   const { previousEpisode, nextEpisode } = useMemo(() => {
     if (!resolvedEntry || entries === undefined) {
@@ -327,8 +334,11 @@ export function Player() {
           } catch {}
         }}
       />
-      <div className="pv-video-container" ref={setContainerEl}>
-        <video ref={videoRef} controls={controlsType === 'stock'} autoPlay />
+      <div
+        className={`pv-video-container${controlsType === 'videojs' ? ' pv-videojs-container' : ''}`}
+        ref={setContainerEl}
+      >
+        <div className="pv-video-host" ref={setVideoHostElement} />
       </div>
       {needsPermission && (
         <button className="btn btn-primary player-permission-btn" onClick={retryPermission}>
@@ -364,9 +374,9 @@ export function Player() {
       <div className="player-actions">
         <button
           className="btn btn-secondary"
-          onClick={() => setControlsType(controlsType === 'stock' ? 'custom' : 'stock')}
+          onClick={() => setControlsType(controlsType === 'stock' ? 'videojs' : 'stock')}
         >
-          {controlsType === 'stock' ? 'Custom controls' : 'Stock controls'}
+          {controlsType === 'stock' ? 'Video.js controls' : 'Stock controls'}
         </button>
         <button
           className="btn btn-secondary"

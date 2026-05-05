@@ -14,6 +14,17 @@
     html[data-theme="dark"] { --bg: #111; --fg: #eee; --muted: #999; --file-color: #eee; --log-bg: #0a0a0a; --log-border: #333; --panel-bg: #151515; --panel-border: #2e2e2e; --phase-idle: #4ade80; --phase-busy: #93c5fd; --phase-error: #f87171; --seg-requested: #60a5fa; --seg-queued: #a78bfa; --seg-prefetching: #2dd4bf; --seg-processing: #fb923c; --seg-ready: #4ade80; --seg-cache-hit: #22d3ee; --seg-delivered: #a3e635; --seg-canceled: #9ca3af; --seg-aborted: #cbd5e1; --seg-error: #f87171; }
     body { font-family: system-ui, sans-serif; margin: 2rem; background: var(--bg); color: var(--fg); }
     video { width: 100%; max-width: 1280px; display: none; margin-top: 1rem; background: var(--video-bg); }
+    .pv-video-container { max-width: 1280px; margin-top: 1rem; background: var(--video-bg); }
+    .pv-video-container video { margin-top: 0; }
+    .pv-video-container.pv-videojs-container { width: min(100%, calc(80vh * 16 / 9)); }
+    .pv-video-container.pv-videojs-container .video-js { width: 100%; height: auto; aspect-ratio: 16 / 9; }
+    .pv-video-container.pv-videojs-container .video-js .vjs-tech { object-fit: contain; }
+    .pv-video-container:fullscreen { width: 100vw !important; max-width: none !important; height: 100vh !important; margin: 0 !important; background: #000; }
+    .pv-video-container:fullscreen .video-js { width: 100vw !important; max-width: none !important; height: 100vh !important; max-height: none !important; aspect-ratio: auto !important; }
+    .video-js:fullscreen, .video-js.vjs-fullscreen { width: 100vw !important; max-width: none !important; height: 100vh !important; max-height: none !important; aspect-ratio: auto !important; background: #000; }
+    .video-js:fullscreen .vjs-tech, .video-js.vjs-fullscreen .vjs-tech { width: 100% !important; max-width: none !important; height: 100% !important; max-height: none !important; object-fit: contain; }
+    .pv-video-container:fullscreen video { width: 100%; height: 100%; object-fit: contain; }
+    .pv-video-container::backdrop, .video-js::backdrop { background: #000; }
     #status { margin-top: 0.5rem; color: var(--muted); }
     input[type="file"] { font-size: 1rem; color: var(--file-color); }
     .player-controls {
@@ -270,7 +281,7 @@
     <input type="file" id="subtitle-input" accept=".srt,.vtt" style="display:none">
     <button id="load-subtitles" disabled>Load subtitles</button>
     <button id="clear-subtitles" disabled>Clear subtitles</button>
-    <button id="toggle-controls">Custom controls</button>
+    <button id="toggle-controls">Video.js controls</button>
   </div>
   <p id="status">Select a video file to play.</p>
   <div id="subtitle-status"></div>

@@ -25,8 +25,8 @@ vi.mock('../../app/src/hooks/useSetting.js', () => ({
   useSetting: useSettingMock,
 }));
 
-vi.mock('../../app/src/hooks/useCustomControls.js', () => ({
-  useCustomControls: vi.fn(),
+vi.mock('../../app/src/hooks/useVideoJsControls.js', () => ({
+  useVideoJsControls: vi.fn(),
 }));
 
 vi.mock('../../app/src/hooks/useFullscreen.js', () => ({
@@ -78,6 +78,7 @@ describe('Player', () => {
       clearExternalSubtitles: vi.fn(),
       copyDiagnostics: vi.fn(),
       diagnosticsStatus: '',
+      savePosition: vi.fn(),
     });
   });
 
@@ -106,16 +107,20 @@ describe('Player', () => {
     );
 
     expect(html).not.toContain('Loading...');
-    expect(html).toContain('<video');
-    expect(useEngineMock).toHaveBeenCalledWith({
-      kind: 'entry',
-      entry,
-      playback: null,
-      playbackTarget: {
-        deviceId: 'device-1',
-        playbackKey: 'file:Episode.mkv|1000',
+    expect(html).toContain('pv-video-host');
+    expect(useEngineMock).toHaveBeenCalledWith(
+      {
+        kind: 'entry',
+        entry,
+        playback: null,
+        playbackTarget: {
+          deviceId: 'device-1',
+          playbackKey: 'file:Episode.mkv|1000',
+        },
       },
-    });
+      'stock',
+      null,
+    );
   });
 
   it('renders not found instead of staying on loading when the catalog row is missing', async () => {
@@ -142,7 +147,7 @@ describe('Player', () => {
 
     expect(html).not.toContain('Loading...');
     expect(html).toContain('Video not found.');
-    expect(useEngineMock).toHaveBeenCalledWith(null);
+    expect(useEngineMock).toHaveBeenCalledWith(null, 'stock', null);
   });
 
   it('renders the player while device id is still pending', async () => {
@@ -170,12 +175,16 @@ describe('Player', () => {
     );
 
     expect(html).not.toContain('Loading...');
-    expect(html).toContain('<video');
-    expect(useEngineMock).toHaveBeenCalledWith({
-      kind: 'entry',
-      entry,
-      playback: null,
-      playbackTarget: null,
-    });
+    expect(html).toContain('pv-video-host');
+    expect(useEngineMock).toHaveBeenCalledWith(
+      {
+        kind: 'entry',
+        entry,
+        playback: null,
+        playbackTarget: null,
+      },
+      'stock',
+      null,
+    );
   });
 });

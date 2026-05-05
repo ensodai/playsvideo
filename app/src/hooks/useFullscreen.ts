@@ -1,17 +1,16 @@
-import { useEffect, type RefObject } from 'react';
+import { useEffect } from 'react';
 
 /**
  * Handles double-click-to-fullscreen and cursor auto-hide in fullscreen.
  * For stock controls: fullscreens the video element (Chrome manages native control auto-hide).
- * For custom controls: fullscreens the container (overlay stays visible).
+ * For Video.js controls: fullscreens the container so the player chrome stays visible.
  */
 export function useFullscreen(
-  videoRef: RefObject<HTMLVideoElement | null>,
+  video: HTMLVideoElement | null,
   container: HTMLElement | null,
 ) {
   useEffect(() => {
     if (!container) return;
-    const video = videoRef.current;
     if (!video) return;
 
     let cursorTimer: ReturnType<typeof setTimeout>;
@@ -35,7 +34,7 @@ export function useFullscreen(
         document.exitFullscreen();
       } else {
         // Stock controls: fullscreen the video so Chrome auto-hides native controls.
-        // Custom controls: fullscreen the container so the overlay stays visible.
+        // Video.js controls: fullscreen the container so the player chrome stays visible.
         const target = video.controls ? video : container;
         target.requestFullscreen();
       }
@@ -48,7 +47,7 @@ export function useFullscreen(
       toggleFullscreen();
     };
 
-    // Container dblclick handler (custom controls path — user clicks on tap target)
+    // Container dblclick handler (Video.js path or direct container tap target)
     const onContainerDblClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
       if (
@@ -90,5 +89,5 @@ export function useFullscreen(
       container.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('fullscreenchange', onFullscreenChange);
     };
-  }, [videoRef, container]);
+  }, [video, container]);
 }

@@ -1307,6 +1307,18 @@ body {
   max-height: 80vh;
   display: block;
 }
+.player-page .pv-videojs-container {
+  width: min(100%, calc(80vh * 16 / 9));
+}
+.player-page .pv-videojs-container .video-js {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  max-height: 80vh;
+}
+.player-page .pv-videojs-container .video-js .vjs-tech {
+  object-fit: contain;
+}
 .player-page video:fullscreen,
 .pv-video-container:fullscreen video {
   outline: none;
@@ -1319,8 +1331,41 @@ body {
 .pv-video-container:fullscreen {
   background: #000;
   border-radius: 0;
+  width: 100vw !important;
+  max-width: none !important;
+  height: 100vh !important;
+  margin: 0 !important;
+  display: block;
 }
 .pv-video-container::backdrop {
+  background: #000;
+}
+.pv-video-container:fullscreen .pv-video-host,
+.pv-video-container:fullscreen .video-js {
+  width: 100vw !important;
+  max-width: none !important;
+  height: 100vh !important;
+  max-height: none !important;
+  aspect-ratio: auto !important;
+}
+.video-js:fullscreen,
+.video-js.vjs-fullscreen {
+  width: 100vw !important;
+  max-width: none !important;
+  height: 100vh !important;
+  max-height: none !important;
+  aspect-ratio: auto !important;
+  background: #000;
+}
+.video-js:fullscreen .vjs-tech,
+.video-js.vjs-fullscreen .vjs-tech {
+  width: 100% !important;
+  max-width: none !important;
+  height: 100% !important;
+  max-height: none !important;
+  object-fit: contain;
+}
+.video-js::backdrop {
   background: #000;
 }
 .pv-video-container:fullscreen video {

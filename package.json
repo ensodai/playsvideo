@@ -63,6 +63,7 @@
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.0.0",
     "typescript": "^5.7.0",
+    "video.js": "^8.23.7",
     "vite": "^6.0.0",
     "vitest": "^3.0.0"
   }

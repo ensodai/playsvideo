@@ -44,6 +44,7 @@ interface UseEngineResult {
   clearExternalSubtitles: () => void;
   copyDiagnostics: () => Promise<void>;
   diagnosticsStatus: string;
+  savePosition: (reason?: SaveReason) => Promise<void>;
 }
 
 function pushDiagnosticEvent(
@@ -93,7 +94,11 @@ async function writeClipboard(text: string): Promise<void> {
   document.body.removeChild(textarea);
 }
 
-export function useEngine(source: EngineSource | null): UseEngineResult {
+export function useEngine(
+  source: EngineSource | null,
+  reloadKey = '',
+  externalVideoElement: HTMLVideoElement | null = null,
+): UseEngineResult {
   const entry = source?.kind === 'entry' ? source.entry : null;
   const playback = source?.kind === 'entry' ? source.playback : null;
   const playbackTarget = source?.kind === 'entry' ? source.playbackTarget : null;
@@ -117,6 +122,7 @@ export function useEngine(source: EngineSource | null): UseEngineResult {
   const workerStatesRef = useRef<unknown>(null);
   const segmentStatesRef = useRef<unknown>(null);
   const readyDetailRef = useRef<unknown>(null);
+  const sessionResumeRef = useRef<{ sourceKey: string; positionSec: number } | null>(null);
   const [status, setStatus] = useState('');
   const [phase, setPhase] = useState('idle');
   const [hasEnded, setHasEnded] = useState(false);
@@ -129,11 +135,17 @@ export function useEngine(source: EngineSource | null): UseEngineResult {
     'auto',
   );
 
-  const savePosition = useCallback(async (reason: SaveReason = 'passive') => {
+  useEffect(() => {
+    videoRef.current = externalVideoElement;
+  }, [externalVideoElement]);
+
+  const savePositionForVideo = useCallback(async (
+    video: HTMLVideoElement | null,
+    reason: SaveReason = 'passive',
+  ) => {
     const currentEntry = entryRef.current;
     const currentPlaybackTarget = playbackTargetRef.current;
-    if (!currentEntry || !currentPlaybackTarget || !videoRef.current) return;
-    const video = videoRef.current;
+    if (!currentEntry || !currentPlaybackTarget || !video) return;
     const currentTime = video.currentTime;
     const duration = video.duration;
 
@@ -155,6 +167,21 @@ export function useEngine(source: EngineSource | null): UseEngineResult {
       lastPlayedAt: Date.now(),
     });
     playbackRef.current = nextPlayback;
+  }, []);
+
+  const savePosition = useCallback(
+    async (reason: SaveReason = 'passive') => {
+      await savePositionForVideo(videoRef.current, reason);
+    },
+    [savePositionForVideo],
+  );
+
+  const rememberSessionResumePosition = useCallback((video: HTMLVideoElement, key: string | null) => {
+    if (!key || !Number.isFinite(video.currentTime) || video.currentTime <= 0) return;
+    sessionResumeRef.current = {
+      sourceKey: key,
+      positionSec: video.currentTime,
+    };
   }, []);
 
   const copyDiagnostics = useCallback(async () => {
@@ -208,9 +235,10 @@ export function useEngine(source: EngineSource | null): UseEngineResult {
   }, [phase, status, subtitleStatus]);
 
   useEffect(() => {
-    if (!source || !videoRef.current) return;
+    const video = externalVideoElement ?? videoRef.current;
+    if (!source || !video) return;
 
-    const video = videoRef.current;
+    videoRef.current = video;
     video.currentTime = 0;
     const engine = new PlaysVideoEngine(video, {
       embeddedSubtitlePolicy,
@@ -250,7 +278,16 @@ export function useEngine(source: EngineSource | null): UseEngineResult {
         `${mode}; duration=${Number(e.detail.durationSec).toFixed(3)}`,
       );
 
-      if (entry) {
+      const sessionResume = sessionResumeRef.current;
+      if (sessionResume?.sourceKey === sourceKey && sessionResume.positionSec > 0) {
+        video.currentTime = sessionResume.positionSec;
+        sessionResumeRef.current = null;
+        pushDiagnosticEvent(
+          diagnosticsRef,
+          'video:restore-position',
+          `currentTime=${sessionResume.positionSec.toFixed(3)}`,
+        );
+      } else if (entry) {
         const resumePlayback = playbackRef.current;
         if (resumePlayback?.positionSec > 0 && resumePlayback.watchState === 'in-progress') {
           video.currentTime = resumePlayback.positionSec;
@@ -415,8 +452,9 @@ export function useEngine(source: EngineSource | null): UseEngineResult {
     })();
 
     return () => {
+      rememberSessionResumePosition(video, sourceKey);
       if (entry) {
-        savePosition().then(() => scheduleSyncIfLoggedIn());
+        savePositionForVideo(video).then(() => scheduleSyncIfLoggedIn());
       }
       if (interval) clearInterval(interval);
       video.removeEventListener('playing', onPlaying);
@@ -431,7 +469,16 @@ export function useEngine(source: EngineSource | null): UseEngineResult {
       engine.destroy();
       engineRef.current = null;
     };
-  }, [embeddedSubtitlePolicy, sourceKey, retryCounter]);
+  }, [
+    embeddedSubtitlePolicy,
+    sourceKey,
+    retryCounter,
+    reloadKey,
+    externalVideoElement,
+    rememberSessionResumePosition,
+    savePosition,
+    savePositionForVideo,
+  ]);
 
   const retryPermission = useCallback(async () => {
     if (!folderProvider.requiresPermissionGrant) {

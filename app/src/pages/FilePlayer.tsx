@@ -1,20 +1,27 @@
 import { useRef, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useEngine } from '../hooks/useEngine';
+import { usePlaybackVideoElement } from '../hooks/usePlaybackVideoElement.js';
 import { useSetting } from '../hooks/useSetting';
-import { useCustomControls } from '../hooks/useCustomControls';
 import { useFullscreen } from '../hooks/useFullscreen';
-import { PLAYER_CONTROLS_TYPE_KEY } from '../settings.js';
+import { useVideoJsControls } from '../hooks/useVideoJsControls.js';
+import {
+  normalizePlayerControlsType,
+  PLAYER_CONTROLS_TYPE_KEY,
+  type PlayerControlsType,
+} from '../settings.js';
 
 export function FilePlayer() {
   const [file, setFile] = useState<File | null>(null);
   const subtitleInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [containerEl, setContainerEl] = useState<HTMLDivElement | null>(null);
-  const [controlsType, setControlsType] = useSetting<'stock' | 'custom'>(
+  const [storedControlsType, setControlsType] = useSetting<PlayerControlsType | 'custom'>(
     PLAYER_CONTROLS_TYPE_KEY,
     'stock',
   );
+  const controlsType = normalizePlayerControlsType(storedControlsType);
+  const { setVideoHostElement, videoElement } = usePlaybackVideoElement(controlsType);
 
   // File Handling API (launchQueue)
   useEffect(() => {
@@ -57,7 +64,6 @@ export function FilePlayer() {
   }, []);
 
   const {
-    videoRef,
     status,
     phase,
     subtitleStatus,
@@ -65,9 +71,9 @@ export function FilePlayer() {
     clearExternalSubtitles,
     copyDiagnostics,
     diagnosticsStatus,
-  } = useEngine(file ? { kind: 'file', file } : null);
-  useCustomControls(videoRef, containerEl, controlsType === 'custom');
-  useFullscreen(videoRef, containerEl);
+  } = useEngine(file ? { kind: 'file', file } : null, controlsType, videoElement);
+  useVideoJsControls(videoElement, controlsType);
+  useFullscreen(videoElement, containerEl);
 
   return (
     <div className="player-page">
@@ -103,15 +109,18 @@ export function FilePlayer() {
           } catch {}
         }}
       />
-      <div className="pv-video-container" ref={setContainerEl}>
-        <video ref={videoRef} controls={controlsType === 'stock'} autoPlay />
+      <div
+        className={`pv-video-container${controlsType === 'videojs' ? ' pv-videojs-container' : ''}`}
+        ref={setContainerEl}
+      >
+        <div className="pv-video-host" ref={setVideoHostElement} />
       </div>
       <div className="player-actions">
         <button
           className="btn btn-secondary"
-          onClick={() => setControlsType(controlsType === 'stock' ? 'custom' : 'stock')}
+          onClick={() => setControlsType(controlsType === 'stock' ? 'videojs' : 'stock')}
         >
-          {controlsType === 'stock' ? 'Custom controls' : 'Stock controls'}
+          {controlsType === 'stock' ? 'Video.js controls' : 'Stock controls'}
         </button>
         <button
           className="btn btn-secondary"

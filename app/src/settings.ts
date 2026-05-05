@@ -1,5 +1,6 @@
 export type ThemePreference = 'system' | 'light' | 'dark';
 export type EmbeddedSubtitlePolicy = 'auto' | 'off';
+export type PlayerControlsType = 'stock' | 'videojs';
 
 export const THEME_PREFERENCE_KEY = 'ui-theme-preference';
 export const THEME_PREFERENCE_STORAGE_KEY = 'pv-theme-preference';
@@ -10,6 +11,14 @@ export const AUTO_RESCAN_DETAIL_PAGES_KEY = 'scan-auto-rescan-detail-pages';
 export const EMBEDDED_SUBTITLE_POLICY_KEY = 'subtitle-embedded-policy';
 export const CATALOG_VIEW_MODE_KEY = 'catalog-view-mode';
 export type CatalogViewMode = 'card' | 'list';
+
+export function normalizePlayerControlsType(value: unknown): PlayerControlsType {
+  if (value === 'videojs' || value === 'custom') {
+    return 'videojs';
+  }
+
+  return 'stock';
+}
 
 export function isThemePreference(value: unknown): value is ThemePreference {
   return value === 'system' || value === 'light' || value === 'dark';

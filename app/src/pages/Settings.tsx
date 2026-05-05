@@ -14,8 +14,10 @@ import {
   AUTO_RESCAN_DETAIL_PAGES_KEY,
   EMBEDDED_SUBTITLE_POLICY_KEY,
   getStoredThemePreference,
+  normalizePlayerControlsType,
   type EmbeddedSubtitlePolicy,
   PLAYER_CONTROLS_TYPE_KEY,
+  type PlayerControlsType,
   type ThemePreference,
   THEME_PREFERENCE_KEY,
 } from '../settings.js';
@@ -26,10 +28,11 @@ export function Settings() {
     THEME_PREFERENCE_KEY,
     getStoredThemePreference(),
   );
-  const [controlsType, setControlsType] = useSetting<'stock' | 'custom'>(
+  const [storedControlsType, setControlsType] = useSetting<PlayerControlsType | 'custom'>(
     PLAYER_CONTROLS_TYPE_KEY,
     'stock',
   );
+  const controlsType = normalizePlayerControlsType(storedControlsType);
   const [autoplayNextEpisode, setAutoplayNextEpisode] = useSetting<boolean>(
     AUTOPLAY_NEXT_EPISODE_KEY,
     false,
@@ -109,10 +112,10 @@ export function Settings() {
           id="player-controls-preference"
           className="metadata-settings-input"
           value={controlsType}
-          onChange={(event) => setControlsType(event.target.value as 'stock' | 'custom')}
+          onChange={(event) => setControlsType(event.target.value as PlayerControlsType)}
         >
           <option value="stock">Native browser controls</option>
-          <option value="custom">Custom controls</option>
+          <option value="videojs">Video.js controls</option>
         </select>
         <label className="metadata-settings-checkbox">
           <input
