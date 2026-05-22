@@ -20,6 +20,8 @@ const TRACKS_ID = 0x1654ae6b;
 const TRACK_ENTRY_ID = 0xae;
 const TRACK_NUMBER_ID = 0xd7;
 const TRACK_TYPE_ID = 0x83;
+const FLAG_ENABLED_ID = 0xb9;
+const FLAG_DEFAULT_ID = 0x88;
 const CUES_ID = 0x1c53bb6b;
 const CUEPOINT_ID = 0xbb;
 const CUETIME_ID = 0xb3;
@@ -92,7 +94,9 @@ function concat(...arrays: Uint8Array[]): Uint8Array {
 function buildMkvBuffer(
   cues: Array<{ cueTime: number; track: number; clusterOffset: number }>,
   timestampScale = 1_000_000,
-  tracks?: Array<{ number: number; type: number }>,
+  tracks: Array<{ number: number; type: number; enabled?: boolean; default?: boolean }> = [
+    { number: 1, type: 1 },
+  ],
 ): Uint8Array {
   const docType = new TextEncoder().encode('matroska');
   const ebmlHeader = ebmlElement(
@@ -118,6 +122,12 @@ function buildMkvBuffer(
               concat(
                 ebmlUintElement(TRACK_NUMBER_ID, track.number),
                 ebmlUintElement(TRACK_TYPE_ID, track.type),
+                track.enabled === undefined
+                  ? new Uint8Array()
+                  : ebmlUintElement(FLAG_ENABLED_ID, Number(track.enabled)),
+                track.default === undefined
+                  ? new Uint8Array()
+                  : ebmlUintElement(FLAG_DEFAULT_ID, Number(track.default)),
               ),
             ),
           ),
@@ -226,6 +236,59 @@ describe('mkv-keyframe-index', () => {
     const cues = await parseMkvCues(bufferRead(mkv), mkv.length);
 
     expect(cues.map((cue) => cue.timestampMs)).toEqual([0, 2000]);
+  });
+
+  it('does not trust cues when no video track can be identified', async () => {
+    const mkv = buildMkvBuffer(
+      [
+        { cueTime: 0, track: 2, clusterOffset: 1000 },
+        { cueTime: 1000, track: 2, clusterOffset: 50_000 },
+      ],
+      1_000_000,
+      [{ number: 2, type: 2 }],
+    );
+
+    const cues = await parseMkvCues(bufferRead(mkv), mkv.length);
+
+    expect(cues).toEqual([]);
+  });
+
+  it('uses the default video track when multiple video tracks are present', async () => {
+    const mkv = buildMkvBuffer(
+      [
+        { cueTime: 0, track: 1, clusterOffset: 1000 },
+        { cueTime: 1000, track: 2, clusterOffset: 50_000 },
+        { cueTime: 2000, track: 1, clusterOffset: 100_000 },
+        { cueTime: 3000, track: 2, clusterOffset: 150_000 },
+      ],
+      1_000_000,
+      [
+        { number: 1, type: 1, default: false },
+        { number: 2, type: 1, default: true },
+      ],
+    );
+
+    const cues = await parseMkvCues(bufferRead(mkv), mkv.length);
+
+    expect(cues.map((cue) => cue.timestampMs)).toEqual([1000, 3000]);
+  });
+
+  it('skips disabled video tracks when matching cues', async () => {
+    const mkv = buildMkvBuffer(
+      [
+        { cueTime: 0, track: 1, clusterOffset: 1000 },
+        { cueTime: 1000, track: 2, clusterOffset: 50_000 },
+      ],
+      1_000_000,
+      [
+        { number: 1, type: 1, enabled: false },
+        { number: 2, type: 1 },
+      ],
+    );
+
+    const cues = await parseMkvCues(bufferRead(mkv), mkv.length);
+
+    expect(cues.map((cue) => cue.timestampMs)).toEqual([1000]);
   });
 
   it('builds a keyframe index from a StreamSource', async () => {

@@ -186,6 +186,8 @@ export async function parseMkvCueIndex(
       infoOffset = absPos;
     } else if (el.id === TRACKS_ID) {
       tracksOffset = absPos;
+    } else if (el.id === CUES_ID) {
+      cuesOffset = absPos;
     } else if (el.id === CLUSTER_ID) {
       break;
     }
@@ -224,6 +226,9 @@ export async function parseMkvCueIndex(
 
   const videoTrackNumber =
     tracksOffset !== undefined ? await readVideoTrackNumber(read, tracksOffset, fileSize) : null;
+  if (videoTrackNumber === null) {
+    return { cuePoints: [], durationSec };
+  }
 
   if (cuesOffset === undefined) {
     return { cuePoints: [], durationSec };
@@ -249,7 +254,7 @@ export async function parseMkvCueIndex(
     if (cpEl.id === CUEPOINT_ID) {
       let cueTime: number | undefined;
       let hasAnyClusterPosition = false;
-      let hasMatchingTrackPosition = videoTrackNumber === null;
+      let hasMatchingTrackPosition = false;
       const cpEnd = cp + cpEl.dataStart + cpEl.dataSize;
       let inner = cp + cpEl.dataStart;
       while (inner < cpEnd && inner < cuesBuf.length - 2) {
@@ -314,6 +319,8 @@ async function readVideoTrackNumber(
       ? tracksHdrBuf
       : await read(tracksOffset, Math.min(tracksOffset + tracksEnd, fileSize));
 
+  let firstVideoTrackNumber: number | null = null;
+  let defaultVideoTrackNumber: number | null = null;
   let pos = tracksEl.dataStart;
   while (pos < tracksEnd && pos < tracksBuf.length - 2) {
     const trackEntry = readElementHeader(tracksBuf, pos);
@@ -324,6 +331,8 @@ async function readVideoTrackNumber(
       let entryPos = pos + trackEntry.dataStart;
       let trackNumber: number | undefined;
       let trackType: number | undefined;
+      let enabled = true;
+      let isDefault = true;
 
       while (entryPos < entryEnd && entryPos < tracksBuf.length - 2) {
         const child = readElementHeader(tracksBuf, entryPos);
@@ -332,13 +341,20 @@ async function readVideoTrackNumber(
           trackNumber = readUint(tracksBuf, entryPos + child.dataStart, child.dataSize);
         } else if (child.id === TRACK_TYPE_ID) {
           trackType = readUint(tracksBuf, entryPos + child.dataStart, child.dataSize);
+        } else if (child.id === FLAG_ENABLED_ID) {
+          enabled = readUint(tracksBuf, entryPos + child.dataStart, child.dataSize) !== 0;
+        } else if (child.id === FLAG_DEFAULT_ID) {
+          isDefault = readUint(tracksBuf, entryPos + child.dataStart, child.dataSize) !== 0;
         }
         if (child.dataSize === UNKNOWN_SIZE) break;
         entryPos += child.dataStart + child.dataSize;
       }
 
-      if (trackNumber !== undefined && trackType === VIDEO_TRACK_TYPE) {
-        return trackNumber;
+      if (trackNumber !== undefined && trackType === VIDEO_TRACK_TYPE && enabled) {
+        firstVideoTrackNumber ??= trackNumber;
+        if (isDefault) {
+          defaultVideoTrackNumber ??= trackNumber;
+        }
       }
     }
 
@@ -346,7 +362,7 @@ async function readVideoTrackNumber(
     pos += trackEntry.dataStart + trackEntry.dataSize;
   }
 
-  return null;
+  return defaultVideoTrackNumber ?? firstVideoTrackNumber;
 }
 
 const EBML_ID = 0x1a45dfa3;
@@ -368,6 +384,8 @@ const TRACKS_ID = 0x1654ae6b;
 const TRACK_ENTRY_ID = 0xae;
 const TRACK_NUMBER_ID = 0xd7;
 const TRACK_TYPE_ID = 0x83;
+const FLAG_ENABLED_ID = 0xb9;
+const FLAG_DEFAULT_ID = 0x88;
 const CLUSTER_ID = 0x1f43b675;
 
 const UNKNOWN_SIZE = -1;
