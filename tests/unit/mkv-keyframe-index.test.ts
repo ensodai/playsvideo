@@ -16,6 +16,10 @@ const SEEKPOSITION_ID = 0x53ac;
 const INFO_ID = 0x1549a966;
 const TIMESTAMP_SCALE_ID = 0x2ad7b1;
 const DURATION_ID = 0x4489;
+const TRACKS_ID = 0x1654ae6b;
+const TRACK_ENTRY_ID = 0xae;
+const TRACK_NUMBER_ID = 0xd7;
+const TRACK_TYPE_ID = 0x83;
 const CUES_ID = 0x1c53bb6b;
 const CUEPOINT_ID = 0xbb;
 const CUETIME_ID = 0xb3;
@@ -88,6 +92,7 @@ function concat(...arrays: Uint8Array[]): Uint8Array {
 function buildMkvBuffer(
   cues: Array<{ cueTime: number; track: number; clusterOffset: number }>,
   timestampScale = 1_000_000,
+  tracks?: Array<{ number: number; type: number }>,
 ): Uint8Array {
   const docType = new TextEncoder().encode('matroska');
   const ebmlHeader = ebmlElement(
@@ -103,6 +108,22 @@ function buildMkvBuffer(
       ebmlFloat64Element(DURATION_ID, durationTicks),
     ),
   );
+  const tracksElement = tracks
+    ? ebmlElement(
+        TRACKS_ID,
+        concat(
+          ...tracks.map((track) =>
+            ebmlElement(
+              TRACK_ENTRY_ID,
+              concat(
+                ebmlUintElement(TRACK_NUMBER_ID, track.number),
+                ebmlUintElement(TRACK_TYPE_ID, track.type),
+              ),
+            ),
+          ),
+        ),
+      )
+    : new Uint8Array();
 
   const cuePointElements = cues.map((cue) =>
     ebmlElement(
@@ -141,10 +162,13 @@ function buildMkvBuffer(
 
   const seekHeadEstimate = buildSeekHead(0, 0);
   const infoRelOffset = seekHeadEstimate.length;
-  const cuesRelOffset = seekHeadEstimate.length + infoElement.length;
+  const cuesRelOffset = seekHeadEstimate.length + infoElement.length + tracksElement.length;
   const seekHead = buildSeekHead(infoRelOffset, cuesRelOffset);
 
-  return concat(ebmlHeader, ebmlElement(SEGMENT_ID, concat(seekHead, infoElement, cuesElement)));
+  return concat(
+    ebmlHeader,
+    ebmlElement(SEGMENT_ID, concat(seekHead, infoElement, tracksElement, cuesElement)),
+  );
 }
 
 function bufferRead(buffer: Uint8Array) {
@@ -182,6 +206,26 @@ describe('mkv-keyframe-index', () => {
         { timestamp: 2, sequenceNumber: 2 },
       ],
     });
+  });
+
+  it('filters cue points to the video track when track metadata is available', async () => {
+    const mkv = buildMkvBuffer(
+      [
+        { cueTime: 0, track: 1, clusterOffset: 1000 },
+        { cueTime: 500, track: 2, clusterOffset: 20_000 },
+        { cueTime: 1000, track: 2, clusterOffset: 50_000 },
+        { cueTime: 2000, track: 1, clusterOffset: 100_000 },
+      ],
+      1_000_000,
+      [
+        { number: 1, type: 1 },
+        { number: 2, type: 2 },
+      ],
+    );
+
+    const cues = await parseMkvCues(bufferRead(mkv), mkv.length);
+
+    expect(cues.map((cue) => cue.timestampMs)).toEqual([0, 2000]);
   });
 
   it('builds a keyframe index from a StreamSource', async () => {
