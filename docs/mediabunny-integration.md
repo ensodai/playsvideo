@@ -31,6 +31,13 @@ patches we actually need, and how we want to maintain it going forward.
 
 ## What We Still Need In The Fork
 
+### MKV keyframe index startup path
+
+`playsvideo` intentionally does not use mediabunny's MKV key-packet iteration
+for the fast startup keyframe index. Even with `metadataOnly`, mediabunny may
+seek into clusters across the file. The project-specific sparse cue parser is
+documented in [MKV Sparse Cue Index](./mkv-sparse-cue-index.md).
+
 ### 1. Subtitle support
 
 This is the main reason the fork still exists.

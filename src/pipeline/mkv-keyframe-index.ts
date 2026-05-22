@@ -1,6 +1,14 @@
 import type { Source } from '../source.js';
 import type { KeyframeIndex } from './types.js';
 
+/**
+ * Sparse Matroska cue reader.
+ *
+ * This exists because mediabunny's MKV key-packet iteration can seek into
+ * clusters across the file even with metadataOnly enabled. The contract here is
+ * stricter: read EBML headers plus Info, Tracks, SeekHead, and Cues metadata;
+ * never read Cluster media payload while building the fast keyframe index.
+ */
 export interface MkvCuePoint {
   timestampMs: number;
 }
@@ -118,89 +126,31 @@ export async function parseMkvCueIndex(
   read: (start: number, end: number) => Uint8Array | Promise<Uint8Array>,
   fileSize: number,
 ): Promise<ParsedMkvCueIndex> {
-  let pos = 0;
   const headerData = await read(0, Math.min(64, fileSize));
   const headerEl = readElementHeader(headerData, 0);
   if (!headerEl || headerEl.id !== EBML_ID) {
     throw new Error('Not an EBML file');
   }
-  pos = headerEl.dataStart + headerEl.dataSize;
 
-  const segBuf = await read(pos, Math.min(pos + 16, fileSize));
-  const segEl = readElementHeader(segBuf, 0);
-  if (!segEl || segEl.id !== SEGMENT_ID) {
-    throw new Error('Segment element not found');
-  }
-  const segmentDataStart = pos + segEl.dataStart;
-
-  let cuesOffset: number | undefined;
-  let infoOffset: number | undefined;
-  let tracksOffset: number | undefined;
+  const segment = await findSegmentElement(read, fileSize, headerEl.dataStart + headerEl.dataSize);
+  const segmentDataStart = segment.offset + segment.element.dataStart;
   let timestampScale = 1_000_000;
-
-  const scanPos = segmentDataStart;
-  const segmentEnd = segEl.dataSize === UNKNOWN_SIZE ? fileSize : segmentDataStart + segEl.dataSize;
-  const scanLimit = Math.min(segmentEnd, scanPos + 4096);
-  const scanBuf = await read(scanPos, Math.min(scanLimit, fileSize));
-
-  let localPos = 0;
-  while (localPos < scanBuf.length - 2) {
-    const el = readElementHeader(scanBuf, localPos);
-    if (!el) break;
-
-    const absPos = scanPos + localPos;
-    if (el.id === SEEKHEAD_ID) {
-      const seekHeadEnd = localPos + el.dataStart + el.dataSize;
-      let sp = localPos + el.dataStart;
-      while (sp < seekHeadEnd && sp < scanBuf.length - 2) {
-        const seekEl = readElementHeader(scanBuf, sp);
-        if (!seekEl) break;
-        if (seekEl.id === SEEK_ID) {
-          const seekEnd = sp + seekEl.dataStart + seekEl.dataSize;
-          let seekInner = sp + seekEl.dataStart;
-          let seekId: number | undefined;
-          let seekPosition: number | undefined;
-          while (seekInner < seekEnd && seekInner < scanBuf.length - 2) {
-            const innerEl = readElementHeader(scanBuf, seekInner);
-            if (!innerEl) break;
-            if (innerEl.id === SEEKID_ID) {
-              seekId = readUint(scanBuf, seekInner + innerEl.dataStart, innerEl.dataSize);
-            } else if (innerEl.id === SEEKPOSITION_ID) {
-              seekPosition = readUint(scanBuf, seekInner + innerEl.dataStart, innerEl.dataSize);
-            }
-            seekInner += innerEl.dataStart + innerEl.dataSize;
-          }
-          if (seekId === CUES_ID && seekPosition !== undefined) {
-            cuesOffset = segmentDataStart + seekPosition;
-          }
-          if (seekId === INFO_ID && seekPosition !== undefined) {
-            infoOffset = segmentDataStart + seekPosition;
-          }
-          if (seekId === TRACKS_ID && seekPosition !== undefined) {
-            tracksOffset = segmentDataStart + seekPosition;
-          }
-        }
-        sp += seekEl.dataStart + seekEl.dataSize;
-      }
-    } else if (el.id === INFO_ID) {
-      infoOffset = absPos;
-    } else if (el.id === TRACKS_ID) {
-      tracksOffset = absPos;
-    } else if (el.id === CUES_ID) {
-      cuesOffset = absPos;
-    } else if (el.id === CLUSTER_ID) {
-      break;
-    }
-
-    if (el.dataSize === UNKNOWN_SIZE) break;
-    localPos += el.dataStart + el.dataSize;
-  }
+  const segmentEnd =
+    segment.element.dataSize === UNKNOWN_SIZE
+      ? fileSize
+      : segmentDataStart + segment.element.dataSize;
+  const { cuesOffset, infoOffset, tracksOffset } = await scanSegmentMetadata(
+    read,
+    segmentDataStart,
+    Math.min(segmentEnd, fileSize),
+    fileSize,
+  );
 
   let durationSec: number | null = null;
   if (infoOffset !== undefined) {
     const infoHdrBuf = await read(infoOffset, Math.min(infoOffset + 64, fileSize));
     const infoEl = readElementHeader(infoHdrBuf, 0);
-    if (infoEl && infoEl.id === INFO_ID) {
+    if (infoEl && infoEl.id === INFO_ID && infoEl.dataSize !== UNKNOWN_SIZE) {
       const infoEnd = infoEl.dataStart + infoEl.dataSize;
       const infoBuf =
         infoEnd <= infoHdrBuf.length
@@ -239,11 +189,16 @@ export async function parseMkvCueIndex(
   if (!cuesEl || cuesEl.id !== CUES_ID) {
     return { cuePoints: [], durationSec };
   }
+  if (cuesEl.dataSize === UNKNOWN_SIZE) {
+    return { cuePoints: [], durationSec };
+  }
 
   const cuesDataStart = cuesOffset + cuesEl.dataStart;
-  const cuesDataSize =
-    cuesEl.dataSize === UNKNOWN_SIZE ? fileSize - cuesDataStart : cuesEl.dataSize;
-  const cuesBuf = await read(cuesDataStart, Math.min(cuesDataStart + cuesDataSize, fileSize));
+  const cuesDataEnd = cuesDataStart + cuesEl.dataSize;
+  if (cuesDataEnd > fileSize) {
+    return { cuePoints: [], durationSec };
+  }
+  const cuesBuf = await read(cuesDataStart, cuesDataEnd);
 
   const cuePoints: MkvCuePoint[] = [];
   let cp = 0;
@@ -299,7 +254,178 @@ export async function parseMkvCueIndex(
     cp += cpEl.dataStart + cpEl.dataSize;
   }
 
-  return { cuePoints, durationSec };
+  return { cuePoints: dedupeCuePoints(cuePoints), durationSec };
+}
+
+interface SegmentElement {
+  offset: number;
+  element: ElementHeader;
+}
+
+interface SegmentMetadataOffsets {
+  cuesOffset?: number;
+  infoOffset?: number;
+  tracksOffset?: number;
+}
+
+async function findSegmentElement(
+  read: (start: number, end: number) => Uint8Array | Promise<Uint8Array>,
+  fileSize: number,
+  startOffset: number,
+): Promise<SegmentElement> {
+  let offset = startOffset;
+  for (let i = 0; offset < fileSize && i < MAX_ELEMENTS_BEFORE_SEGMENT; i++) {
+    const element = await readElementHeaderAt(read, fileSize, offset);
+    if (!element) break;
+    if (element.id === SEGMENT_ID) {
+      return { offset, element };
+    }
+
+    const nextOffset = elementEndOffset(offset, element);
+    if (nextOffset === null || nextOffset <= offset) break;
+    offset = nextOffset;
+  }
+
+  throw new Error('Segment element not found');
+}
+
+async function scanSegmentMetadata(
+  read: (start: number, end: number) => Uint8Array | Promise<Uint8Array>,
+  segmentDataStart: number,
+  segmentEnd: number,
+  fileSize: number,
+): Promise<SegmentMetadataOffsets> {
+  const offsets: SegmentMetadataOffsets = {};
+  let offset = segmentDataStart;
+
+  for (let i = 0; offset < segmentEnd && i < MAX_SEGMENT_METADATA_ELEMENTS; i++) {
+    const element = await readElementHeaderAt(read, fileSize, offset);
+    if (!element) break;
+
+    if (element.id === CLUSTER_ID) {
+      break;
+    }
+    if (element.id === SEEKHEAD_ID) {
+      mergeMetadataOffsets(
+        offsets,
+        await readSeekHeadOffsets(read, offset, element, segmentDataStart, fileSize),
+      );
+    } else if (element.id === INFO_ID) {
+      offsets.infoOffset ??= offset;
+    } else if (element.id === TRACKS_ID) {
+      offsets.tracksOffset ??= offset;
+    } else if (element.id === CUES_ID) {
+      offsets.cuesOffset ??= offset;
+    }
+
+    const nextOffset = elementEndOffset(offset, element);
+    if (nextOffset === null || nextOffset <= offset) break;
+    offset = nextOffset;
+  }
+
+  return offsets;
+}
+
+async function readSeekHeadOffsets(
+  read: (start: number, end: number) => Uint8Array | Promise<Uint8Array>,
+  seekHeadOffset: number,
+  seekHead: ElementHeader,
+  segmentDataStart: number,
+  fileSize: number,
+): Promise<SegmentMetadataOffsets> {
+  const offsets: SegmentMetadataOffsets = {};
+  if (seekHead.dataSize === UNKNOWN_SIZE || seekHead.dataSize > MAX_SEEKHEAD_BYTES) {
+    return offsets;
+  }
+
+  const seekHeadDataStart = seekHeadOffset + seekHead.dataStart;
+  const seekHeadDataEnd = seekHeadDataStart + seekHead.dataSize;
+  if (seekHeadDataEnd > fileSize) {
+    return offsets;
+  }
+
+  const seekBuf = await read(seekHeadDataStart, seekHeadDataEnd);
+  let pos = 0;
+  while (pos < seekBuf.length - 2) {
+    const seekEl = readElementHeader(seekBuf, pos);
+    if (!seekEl) break;
+
+    if (seekEl.id === SEEK_ID) {
+      const seekEnd = pos + seekEl.dataStart + seekEl.dataSize;
+      let seekInner = pos + seekEl.dataStart;
+      let seekId: number | undefined;
+      let seekPosition: number | undefined;
+      while (seekInner < seekEnd && seekInner < seekBuf.length - 2) {
+        const innerEl = readElementHeader(seekBuf, seekInner);
+        if (!innerEl) break;
+        if (innerEl.id === SEEKID_ID) {
+          seekId = readUint(seekBuf, seekInner + innerEl.dataStart, innerEl.dataSize);
+        } else if (innerEl.id === SEEKPOSITION_ID) {
+          seekPosition = readUint(seekBuf, seekInner + innerEl.dataStart, innerEl.dataSize);
+        }
+
+        const nextInner = elementEndOffset(seekInner, innerEl);
+        if (nextInner === null || nextInner <= seekInner) break;
+        seekInner = nextInner;
+      }
+
+      if (seekId !== undefined && seekPosition !== undefined) {
+        const absoluteOffset = segmentDataStart + seekPosition;
+        if (seekId === CUES_ID) {
+          offsets.cuesOffset ??= absoluteOffset;
+        } else if (seekId === INFO_ID) {
+          offsets.infoOffset ??= absoluteOffset;
+        } else if (seekId === TRACKS_ID) {
+          offsets.tracksOffset ??= absoluteOffset;
+        }
+      }
+    }
+
+    const nextPos = elementEndOffset(pos, seekEl);
+    if (nextPos === null || nextPos <= pos) break;
+    pos = nextPos;
+  }
+
+  return offsets;
+}
+
+function mergeMetadataOffsets(
+  target: SegmentMetadataOffsets,
+  source: SegmentMetadataOffsets,
+): void {
+  target.cuesOffset ??= source.cuesOffset;
+  target.infoOffset ??= source.infoOffset;
+  target.tracksOffset ??= source.tracksOffset;
+}
+
+async function readElementHeaderAt(
+  read: (start: number, end: number) => Uint8Array | Promise<Uint8Array>,
+  fileSize: number,
+  offset: number,
+): Promise<ElementHeader | null> {
+  if (offset < 0 || offset >= fileSize) {
+    return null;
+  }
+  const headerBuf = await read(offset, Math.min(offset + MAX_ELEMENT_HEADER_BYTES, fileSize));
+  return readElementHeader(headerBuf, 0);
+}
+
+function elementEndOffset(offset: number, element: ElementHeader): number | null {
+  if (element.dataSize === UNKNOWN_SIZE) {
+    return null;
+  }
+  return offset + element.dataStart + element.dataSize;
+}
+
+function dedupeCuePoints(cuePoints: MkvCuePoint[]): MkvCuePoint[] {
+  const sorted = [...cuePoints].sort((a, b) => a.timestampMs - b.timestampMs);
+  const deduped: MkvCuePoint[] = [];
+  for (const cue of sorted) {
+    if (deduped.length === 0 || cue.timestampMs !== deduped[deduped.length - 1].timestampMs) {
+      deduped.push(cue);
+    }
+  }
+  return deduped;
 }
 
 async function readVideoTrackNumber(
@@ -309,7 +435,7 @@ async function readVideoTrackNumber(
 ): Promise<number | null> {
   const tracksHdrBuf = await read(tracksOffset, Math.min(tracksOffset + 16, fileSize));
   const tracksEl = readElementHeader(tracksHdrBuf, 0);
-  if (!tracksEl || tracksEl.id !== TRACKS_ID) {
+  if (!tracksEl || tracksEl.id !== TRACKS_ID || tracksEl.dataSize === UNKNOWN_SIZE) {
     return null;
   }
 
@@ -390,6 +516,10 @@ const CLUSTER_ID = 0x1f43b675;
 
 const UNKNOWN_SIZE = -1;
 const VIDEO_TRACK_TYPE = 1;
+const MAX_ELEMENT_HEADER_BYTES = 16;
+const MAX_ELEMENTS_BEFORE_SEGMENT = 64;
+const MAX_SEGMENT_METADATA_ELEMENTS = 512;
+const MAX_SEEKHEAD_BYTES = 1024 * 1024;
 
 interface ElementHeader {
   id: number;
