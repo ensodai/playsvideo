@@ -1,6 +1,6 @@
 {
   "name": "playsvideo",
-  "version": "0.4.7",
+  "version": "0.4.7-f0.1",
   "description": "Play any video file in the browser — client-side remuxing and audio transcode, no server required.",
   "license": "MIT",
   "repository": {
@@ -47,7 +47,7 @@
   },
   "dependencies": {
     "hls.js": "^1.5.0",
-    "mediabunny": "github:kzahel/mediabunny#integration"
+    "mediabunny": "github:ensodai/mediabunny#integration"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.6",
