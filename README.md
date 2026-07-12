@@ -98,15 +98,31 @@ See [docs/roadmap.md](docs/roadmap.md) for the full list. Highlights:
 <summary><strong>Development</strong></summary>
 
 ```bash
-pnpm run setup              # install deps + download ffmpeg-core.wasm
+npm install                 # install dependencies
+npm run build               # compile the library
+npm pack                    # create a local .tgz for usage in other projects
 pnpm run dev                # vite dev server (simple player)
 pnpm run typecheck          # tsc --noEmit
 pnpm run test:unit          # fast unit tests
-pnpm run lint               # biome lint
-pnpm run format             # biome format
-pnpm run test:integration   # requires test fixtures in tests/fixtures/
-pnpm --filter app dev       # media player dev server (React app)
 ```
+
+### Custom `mediabunny` Dependency
+
+`playsvideo` strictly depends on a custom fork of `mediabunny` to properly support `AbortError` propagation and background worker termination during HLS rapid seeking. 
+
+The pre-built custom dependency is committed to the repository in the `vendor/` directory. If you are modifying the custom `mediabunny` fork and need to update it here:
+
+1. In your `mediabunny_fork` directory, run: `npm run build && npm pack`
+2. Copy the resulting `.tgz` archive into the `playsvideo/vendor/` folder.
+3. Edit `package.json` in `playsvideo` to point to the exact filename:
+   ```json
+   "dependencies": {
+     "mediabunny": "file:vendor/mediabunny-YOUR-VERSION.tgz"
+   }
+   ```
+4. Run `npm install` to update the lockfile, then rebuild `playsvideo` (`npm run build && npm pack`).
+
+
 
 ```
 src/pipeline/       Core modules (demux, mux, segment plan, audio transcode,
