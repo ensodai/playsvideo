@@ -363,6 +363,8 @@ self.onmessage = (event: MessageEvent) => {
         demux.cancelAllPending();
       }
     }
+  } else if (msg.type === 'cancel-all') {
+    demux?.cancelAllPending();
   } else if (msg.type === 'subtitle') {
     wlog(`recv subtitle trackIndex=${msg.trackIndex}`);
     const queueDelayMs = typeof msg.requestedAtMs === 'number' ? Date.now() - msg.requestedAtMs : 0;

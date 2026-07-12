@@ -29,3 +29,8 @@ app/.env.local
 app/.env.*.local
 *-debug.log
 ui-debug.log
+
+# local builds and ide
+.idea/
+*.tgz
+!vendor/

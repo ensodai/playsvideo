@@ -303,6 +303,13 @@ export class PlaysVideoEngine extends EventTarget {
       transcodeWorkers: options.transcodeWorkers ?? defaultTranscodeWorkerCount(),
       embeddedSubtitlePolicy: options.embeddedSubtitlePolicy ?? 'auto',
     };
+
+    this.video.addEventListener('seeking', () => {
+      if (this._sourceDemux) {
+        this._sourceDemux.cancelAllPending();
+      }
+      this.worker?.postMessage({ type: 'cancel-all' } as any);
+    });
   }
 
   loadFile(file: File, opts?: { keyframeIndex?: KeyframeIndex }): void {
@@ -708,6 +715,14 @@ export class PlaysVideoEngine extends EventTarget {
   private handleWorkerSegmentState(msg: WorkerSegmentStateMessage): void {
     if (msg.phase === 'error' && msg.message) {
       this.recordInternalError(msg.message);
+    }
+    if (msg.phase === 'aborted') {
+      const pending = this.pendingSegments.get(msg.index);
+      if (pending) {
+        pending.reject(new DOMException('Segment aborted', 'AbortError'));
+        this.pendingSegments.delete(msg.index);
+        this.segmentRequestTimes.delete(msg.index);
+      }
     }
     this.noteSegmentState(msg.index, msg.phase, {
       sizeBytes: msg.sizeBytes,

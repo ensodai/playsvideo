@@ -1,7 +1,7 @@
 {
   "name": "playsvideo",
-  "version": "0.4.7-f0.1",
-  "description": "Play any video file in the browser — client-side remuxing and audio transcode, no server required.",
+  "version": "0.4.7-f0.7",
+  "description": "Video player designed to stream local video files in the browser — client-side remuxing and audio transcode, no server required.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -17,7 +17,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "vendor"
   ],
   "scripts": {
     "dev": "vite",
@@ -47,8 +48,11 @@
   },
   "dependencies": {
     "hls.js": "^1.5.0",
-    "mediabunny": "github:ensodai/mediabunny#integration"
+    "mediabunny": "file:vendor/mediabunny-1.38.1-f0.2.tgz"
   },
+  "bundledDependencies": [
+    "mediabunny"
+  ],
   "devDependencies": {
     "@biomejs/biome": "^2.4.6",
     "@playwright/test": "^1.58.2",
