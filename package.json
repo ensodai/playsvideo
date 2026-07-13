@@ -1,6 +1,6 @@
 {
   "name": "playsvideo",
-  "version": "0.4.7-f0.7",
+  "version": "0.4.7-f0.8",
   "description": "Video player designed to stream local video files in the browser — client-side remuxing and audio transcode, no server required.",
   "license": "MIT",
   "repository": {
@@ -48,7 +48,7 @@
   },
   "dependencies": {
     "hls.js": "^1.5.0",
-    "mediabunny": "file:vendor/mediabunny-1.38.1-f0.2.tgz"
+    "mediabunny": "file:vendor/mediabunny-1.38.1-f0.3.tgz"
   },
   "bundledDependencies": [
     "mediabunny"
